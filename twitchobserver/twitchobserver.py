@@ -69,7 +69,7 @@ class Event(object):
 _server_message_re = re.compile('(?:@(\S*)\s+)?:(\w*|tmi.twitch.tv)(?:!\w*)?(?:@\w*.tmi.twitch.tv)?\s+([A-Z]*|\d{3})\s+([^\r\n]*)')
 
 # PRIVMSG Parameters. Groups: (channel, message)
-_privmsg_params_re = re.compile('#(\w+) :([\s\S]*)')
+_privmsg_params_re = re.compile('#(\w+)(?: :)*([\s\S]*)')
 
 # WHISPER parameters. Groups: (recipient, message)
 _whisper_params_re = re.compile('(\w+)\s+:([\s\S]*)')

@@ -66,16 +66,16 @@ class Event(object):
 
 
 # Server messages. Groups: (nickname_or_servername, command, parameters)
-_server_message_re = re.compile('(?:@(\S*)\s+)?:(\w*|tmi.twitch.tv)(?:!\w*)?(?:@\w*.tmi.twitch.tv)?\s+([A-Z]*|\d{3})\s+([^\r\n]*)')
+_server_message_re = re.compile(r'(?:@(\S*)\s+)?:(\w*|tmi.twitch.tv)(?:!\w*)?(?:@\w*.tmi.twitch.tv)?\s+([A-Z]*|\d{3})\s+([^\r\n]*)')
 
 # PRIVMSG Parameters. Groups: (channel, message)
-_privmsg_params_re = re.compile('#(\w+)(?: :)*([\s\S]*)')
+_privmsg_params_re = re.compile(r'#(\w+)(?: :)*([\s\S]*)')
 
 # WHISPER parameters. Groups: (recipient, message)
-_whisper_params_re = re.compile('(\w+)\s+:([\s\S]*)')
+_whisper_params_re = re.compile(r'(\w+)\s+:([\s\S]*)')
 
 # MODE parameters. Groups: (channel, mode, nickname)
-_mode_params_re = re.compile('#(\w+)\s+([+-]o)\s+(\w+)')
+_mode_params_re = re.compile(r'#(\w+)\s+([+-]o)\s+(\w+)')
 
 
 class Observer(object):

@@ -1,3 +1,5 @@
+import codecs
+import logging
 import os
 import re
 import socket
@@ -5,6 +7,9 @@ import sys
 import threading
 import time
 import warnings
+
+
+logger = logging.getLogger(__name__)
 
 
 class BadEvent(Exception):
@@ -101,6 +106,7 @@ class Observer(object):
         self._outbound_lock = threading.Lock()
         self._socket_lock = threading.Lock()
         self._last_time_sent = time.time()
+        self._socket_decoder = codecs.getincrementaldecoder('utf-8')()
 
     def subscribe(self, callback):
         """Receive events from watched channel.
@@ -396,7 +402,7 @@ class Observer(object):
         self._socket.send('CAP REQ :twitch.tv/commands\r\n'.encode('utf-8'))
         self._socket.send('CAP REQ :twitch.tv/tags\r\n'.encode('utf-8'))
 
-        response = self._socket.recv(1024).decode('utf-8')
+        response = self._socket_decoder.decode(self._socket.recv(1024))
         self._socket.settimeout(0.25)
 
         # Handle the initial sequence of responses on main thread to raise if
@@ -414,7 +420,8 @@ class Observer(object):
             while self._is_running:
                 try:
                     with self._socket_lock:
-                        response = truncated_response + self._socket.recv(1024).decode('utf-8')
+                        # ConnectionResetError
+                        response = truncated_response + self._socket_decoder.decode(self._socket.recv(1024))
 
                         if '\r\n' in response:
                             response, truncated_response = response.rsplit('\r\n', 1)
@@ -425,18 +432,10 @@ class Observer(object):
                     self._process_server_messages(response)
                     time.sleep(self._inbound_poll_interval)
 
-                except OSError:
-                    # Forcing the socket to shutdown will result in this
-                    # exception
-                    pass
-
-                except StopIteration:
-                    # Raised by test mock under Python 2
-                    pass
-
                 except socket.timeout as e:
-                    if e.message != 'timed out':
-                        raise socket.error
+                    continue
+                except ConnectionResetError:
+                    self.restart()
 
         def outbound_worker():
             """Worker thread function that handles the outgoing messages to
@@ -462,11 +461,24 @@ class Observer(object):
                 except OSError:
                     pass
 
-        self._inbound_worker_thread = threading.Thread(target=inbound_worker)
-        self._inbound_worker_thread.start()
+        in_worker = self._inbound_worker_thread
+        out_worker = self._outbound_worker_thread
 
-        self._outbound_worker_thread = threading.Thread(target=outbound_worker)
-        self._outbound_worker_thread.start()
+        if not in_worker:
+            self._inbound_worker_thread = threading.Thread(target=inbound_worker)
+            self._inbound_worker_thread.start()
+
+        if not out_worker:
+            self._outbound_worker_thread = threading.Thread(target=outbound_worker)
+            self._outbound_worker_thread.start()
+
+        if in_worker:
+            # this'll block (and +1 our stack)
+            inbound_worker()
+
+        if out_worker:
+            # this'll block (and +1 our stack)
+            outbound_worker()
 
     def stop(self, force_stop=False):
         """Stops the observer.
@@ -489,15 +501,17 @@ class Observer(object):
 
         if self._inbound_worker_thread:
             worker = self._inbound_worker_thread
-            self._inbound_worker_thread = None
-            self._inbound_event_queue = []
-            worker.join(timeout)
+            if threading.current_thread != worker:
+                self._inbound_worker_thread = None
+                self._inbound_event_queue = []
+                worker.join(timeout)
 
         if self._outbound_worker_thread:
             worker = self._outbound_worker_thread
-            self._outbound_worker_thread = None
-            self._outbound_event_queue = []
-            worker.join(timeout)
+            if threading.current_thread != worker:
+                self._outbound_worker_thread = None
+                self._outbound_event_queue = []
+                worker.join(timeout)
 
         if self._socket:
             with self._socket_lock:
@@ -506,6 +520,10 @@ class Observer(object):
 
                 sock.shutdown(socket.SHUT_RDWR)
                 sock.close()
+    
+    def restart(self):
+        self.stop()
+        self.start()
 
     def _process_server_messages(self, response):
         for message in [m for m in response.split('\r\n') if m]:
